@@ -1,10 +1,11 @@
-"""Content browsing commands: search, hot, question, answer, feed, topic."""
+"""Content browsing commands: search, hot, question, answer, feed, topic, read."""
 
 from __future__ import annotations
 
 import json
 import sys
 from contextlib import contextmanager
+from urllib.parse import urlparse
 
 import click
 
@@ -17,8 +18,18 @@ from ..display import (
     print_error,
     print_hint,
     print_info,
+    print_warning,
     strip_html,
 )
+from ..markdown import html_to_markdown
+
+
+class ParsedZhihuUrl:
+    """Parsed Zhihu URL target."""
+
+    def __init__(self, kind: str, identifier: str):
+        self.kind = kind
+        self.identifier = identifier
 
 
 @contextmanager
@@ -32,6 +43,73 @@ def _get_client():
         sys.exit(1)
     with ZhihuClient(cookie_str_to_dict(cookie)) as client:
         yield client
+
+
+def _parse_zhihu_url(raw_url: str) -> ParsedZhihuUrl:
+    """Parse a Zhihu URL into a supported content target."""
+    candidate = raw_url.strip()
+    if not candidate:
+        raise ValueError("URL cannot be empty")
+    if "://" not in candidate:
+        candidate = "https://" + candidate
+
+    parsed = urlparse(candidate)
+    host = parsed.netloc.lower().split("@")[-1].split(":")[0]
+    parts = [p for p in parsed.path.split("/") if p]
+
+    if host == "zhuanlan.zhihu.com" and len(parts) >= 2 and parts[0] == "p":
+        return ParsedZhihuUrl("article", parts[1])
+
+    if host not in {"zhihu.com", "www.zhihu.com"}:
+        raise ValueError("Only zhihu.com and zhuanlan.zhihu.com URLs are supported")
+
+    if len(parts) >= 4 and parts[0] == "question" and parts[2] == "answer":
+        return ParsedZhihuUrl("answer", parts[3])
+    if len(parts) >= 2 and parts[0] == "question":
+        return ParsedZhihuUrl("question", parts[1])
+    if len(parts) >= 2 and parts[0] == "answer":
+        return ParsedZhihuUrl("answer", parts[1])
+    if len(parts) >= 2 and parts[0] == "people":
+        return ParsedZhihuUrl("user", parts[1])
+    if len(parts) >= 2 and parts[0] == "topic":
+        return ParsedZhihuUrl("topic", parts[1])
+    if len(parts) >= 2 and parts[0] == "p":
+        return ParsedZhihuUrl("article", parts[1])
+
+    raise ValueError("Unsupported Zhihu URL type")
+
+
+def _print_article(article: dict):
+    title = strip_html(article.get("title", "—"))
+    raw_content = (
+        article.get("content", "")
+        or article.get("content_html", "")
+        or article.get("excerpt", "—")
+    )
+    content = html_to_markdown(raw_content)
+    author_obj = article.get("author", {})
+    if isinstance(author_obj, dict):
+        author = author_obj.get("name", "—")
+    else:
+        author = str(author_obj or "—")
+
+    console.print()
+    console.print(f"[title]  {title}  [/title]")
+    console.print(f"  [dim]Article by {author}[/dim]")
+    console.print()
+    if content.markdown:
+        console.print(content.markdown, markup=False)
+        console.print()
+    if content.unknown_tags:
+        tags = ", ".join(sorted(content.unknown_tags))
+        print_warning(f"Preserved unsupported HTML tags without conversion: {tags}")
+
+    stats = format_stats_line({
+        "Upvotes": article.get("voteup_count", article.get("voting", 0)),
+        "Comments": article.get("comment_count", article.get("comments_count", 0)),
+    })
+    console.print(stats)
+    console.print()
 
 
 @click.command()
@@ -95,7 +173,8 @@ def search(query: str, search_type: str, limit: int, answers: int, as_json: bool
                         a_content = strip_html(a.get("excerpt", a.get("content", "")))
                         a_upvotes = format_count(a.get("voteup_count", 0))
                         console.print(
-                            f"    [dim]{a_author}:[/dim] {a_content}  [dim]{a_upvotes} upvotes[/dim]"
+                            f"    [dim]{a_author}:[/dim] {a_content}  "
+                            f"[dim]{a_upvotes} upvotes[/dim]"
                         )
 
         console.print()
@@ -152,7 +231,8 @@ def hot(limit: int, answers: int, as_json: bool):
                         a_excerpt = strip_html(a.get("excerpt", a.get("content", "")))
                         a_upvotes = format_count(a.get("voteup_count", 0))
                         console.print(
-                            f"    [dim]{a_author}:[/dim] {a_excerpt}  [dim]{a_upvotes} upvotes[/dim]"
+                            f"    [dim]{a_author}:[/dim] {a_excerpt}  "
+                            f"[dim]{a_upvotes} upvotes[/dim]"
                         )
                 else:
                     console.print("    [dim]No answers[/dim]")
@@ -303,8 +383,108 @@ def answer(answer_id: int, as_json: bool, comments: bool, limit: int):
             for i, c in enumerate(c_data, 1):
                 c_content = strip_html(c.get("content", ""))
                 c_likes = format_count(c.get("vote_count", 0))
-                console.print(f"  [dim]{i}.[/dim] {c_content}  [dim]{c_likes} likes[/dim]")
+                console.print(
+                    f"  [dim]{i}.[/dim] {c_content}  [dim]{c_likes} likes[/dim]"
+                )
             console.print()
+
+
+@click.command()
+@click.argument("url")
+@click.option("--json", "as_json", is_flag=True, help="Output raw JSON")
+def read(url: str, as_json: bool):
+    """Read a Zhihu URL."""
+    try:
+        target = _parse_zhihu_url(url)
+    except ValueError as e:
+        print_error(str(e))
+        print_hint(
+            "Supported: question, answer, people, topic, and zhuanlan article URLs"
+        )
+        sys.exit(1)
+
+    with _get_client() as client:
+        try:
+            if target.kind == "article":
+                result = client.get_article(target.identifier)
+            elif target.kind == "answer":
+                result = client.get_answer(target.identifier)
+            elif target.kind == "question":
+                result = client.get_question(target.identifier)
+            elif target.kind == "user":
+                result = client.get_user_profile(target.identifier)
+            elif target.kind == "topic":
+                result = client.get_topic(target.identifier)
+            else:
+                raise ValueError(f"Unsupported target type: {target.kind}")
+        except Exception as e:
+            print_error(f"Failed to read URL: {e}")
+            sys.exit(1)
+
+        if as_json:
+            click.echo(json.dumps(result, indent=2, ensure_ascii=False))
+            return
+
+        if target.kind == "article":
+            _print_article(result)
+            return
+
+        if target.kind == "answer":
+            author = result.get("author", {}).get("name", "Anonymous")
+            content = strip_html(result.get("content", "—"))
+            console.print()
+            console.print(f"[title]  Answer by {author}  [/title]")
+            console.print()
+            console.print(content)
+            console.print()
+            console.print(format_stats_line({
+                "Upvotes": result.get("voteup_count", 0),
+                "Comments": result.get("comment_count", 0),
+            }))
+            console.print()
+            return
+
+        if target.kind == "question":
+            title = strip_html(result.get("title", "—"))
+            detail = strip_html(result.get("detail", ""))
+            console.print()
+            console.print(f"[title]  {title}  [/title]")
+            if detail:
+                console.print()
+                console.print(detail)
+            console.print()
+            console.print(format_stats_line({
+                "Answers": result.get("answer_count", 0),
+                "Followers": result.get("follower_count", 0),
+                "Views": result.get("visit_count", 0),
+            }))
+            console.print()
+            return
+
+        if target.kind == "user":
+            name = result.get("name", "Unknown")
+            headline = result.get("headline", "")
+            console.print()
+            console.print(f"[title]  {name}  [/title]")
+            if headline:
+                console.print(f"  {headline}")
+            console.print()
+            console.print(format_stats_line({
+                "Answers": result.get("answer_count", 0),
+                "Articles": result.get("articles_count", 0),
+                "Followers": result.get("follower_count", 0),
+            }))
+            console.print()
+            return
+
+        name = result.get("name", "—")
+        intro = strip_html(result.get("introduction", ""))
+        console.print()
+        console.print(f"[title]  # {name}  [/title]")
+        if intro:
+            console.print()
+            console.print(intro)
+        console.print()
 
 
 @click.command()
@@ -353,7 +533,9 @@ def feed(limit: int, as_json: bool):
 
 @click.command()
 @click.option("-l", "--limit", default=6, help="Number of feed items", show_default=True)
-@click.option("-c", "--comment-limit", default=10, help="Comments per item (0=hide)", show_default=True)
+@click.option(
+    "-c", "--comment-limit", default=10, help="Comments per item (0=hide)", show_default=True
+)
 def feeds(limit: int, comment_limit: int):
     """Show recommended feed with comments (推荐+评论)."""
     with _get_client() as client:

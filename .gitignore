@@ -12,6 +12,7 @@ build/
 
 # Virtual environments
 .venv/
+.uv-cache/
 venv/
 env/
 

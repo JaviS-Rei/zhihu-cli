@@ -191,6 +191,16 @@ class ZhihuClient:
         }
         return self._get(url, params=params)
 
+    # ===== Article Detail =====
+
+    def get_article(self, article_id: str) -> dict:
+        """Get a single Zhuanlan article detail."""
+        url = f"{ZHIHU_ZHUANLAN_API}/articles/{article_id}"
+        result = self._get(url)
+        if not isinstance(result, dict):
+            return {}
+        return result
+
     # ===== User Profile =====
 
     def get_user_profile(self, url_token: str) -> dict:

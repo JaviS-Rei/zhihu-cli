@@ -11,6 +11,7 @@
 
 - **认证** — 二维码扫码登录（终端渲染）或手动粘贴 Cookie 登录（不支持从浏览器自动获取 Cookie）
 - **搜索** — 按关键词搜索问题、回答、文章
+- **链接阅读** — 直接读取知乎链接（问题、回答、用户、话题、专栏文章）
 - **热榜** — 查看知乎热榜及热门回答
 - **问题** — 查看问题详情及回答
 - **回答** — 查看回答详情及评论（支持 `--comments` 显示评论，`--limit` 控制数量，默认全部）
@@ -29,7 +30,7 @@
 | 分类       | 命令                                     | 说明                           |
 |------------|------------------------------------------|--------------------------------|
 | Auth       | login, logout, status, whoami            | 登录、退出、状态检查、查看资料 |
-| Read       | search, hot, question, answer            | 搜索、热榜、问题详情、回答详情 |
+| Read       | search, read, hot, question, answer      | 搜索、链接阅读、热榜、问题详情、回答详情 |
 | Users      | user, user-answers, user-articles        | 查看资料、回答列表、文章列表   |
 | Social     | followers, following                     | 查看粉丝、关注列表             |
 | Feed       | feed, feeds, topic                      | 推荐 Feed、推荐+评论、话题详情 |
@@ -53,6 +54,37 @@ pipx install pyzhihu-cli
 
 # 从源码安装（开发用）
 pip install -e .
+```
+
+## 开发环境（uv）
+
+从源码开发时，推荐让 uv 管理项目 Python，避免误用系统 Python 或 conda Python。
+
+```bash
+# 可选：清理旧的本地环境
+rm -rf .venv .uv-cache
+
+# 安装并使用 Python 3.12
+uv python install 3.12
+echo "3.12" > .python-version
+
+# 创建/同步开发环境
+uv sync --dev
+```
+
+如果当前环境不允许 uv 写入默认缓存目录 `~/.cache/uv`，可把缓存放到项目目录：
+
+```bash
+uv --cache-dir .uv-cache sync --dev
+uv --cache-dir .uv-cache run zhihu --help
+uv --cache-dir .uv-cache run pytest tests/test_cli.py::TestReadCommand tests/test_client.py::TestGetArticle -q
+```
+
+普通环境可直接使用：
+
+```bash
+uv run zhihu --help
+uv run pytest tests/test_cli.py::TestReadCommand tests/test_client.py::TestGetArticle -q
 ```
 
 二维码登录使用知乎 API（`/api/v3/account/api/login/qrcode`），**无需安装 Playwright**，仅需本工具依赖的 `requests` 与 `qrcode`。
@@ -101,6 +133,18 @@ zhihu search "机器学习" --type topic
 zhihu search "张三" --type people
 zhihu search "Python" --json
 ```
+
+### 链接阅读
+
+```bash
+# 直接读取知乎链接（支持问题、回答、用户、话题、专栏文章）
+zhihu read "https://zhuanlan.zhihu.com/p/5502876106"
+zhihu read "https://www.zhihu.com/question/12345678"
+zhihu read "https://www.zhihu.com/question/12345678/answer/87654321"
+zhihu read "https://www.zhihu.com/people/someone" --json
+```
+
+`read` 的普通输出会将知乎文章 HTML 转为 Markdown 风格文本，尽量保留标题、列表、链接、代码和图片 URL。遇到未支持的 HTML 标签时，CLI 会原样保留该标签并输出警告；`--json` 输出始终保留 API 原始内容，不做转换。
 
 ### 热榜
 

@@ -8,7 +8,17 @@ import click
 
 from . import __version__
 from .commands.auth import login, logout, status, whoami
-from .commands.content import answer, answers, feed, feeds, hot, question, search, topic
+from .commands.content import (
+    answer,
+    answers,
+    feed,
+    feeds,
+    hot,
+    question,
+    read,
+    search,
+    topic,
+)
 from .commands.interact import (
     article,
     ask,
@@ -49,6 +59,7 @@ cli.add_command(whoami)
 
 # Content
 cli.add_command(search)
+cli.add_command(read)
 cli.add_command(hot)
 cli.add_command(question)
 cli.add_command(answers)

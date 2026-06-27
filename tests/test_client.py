@@ -226,6 +226,18 @@ class TestGetAnswer:
             assert "answers/67890" in mock_get.call_args[0][0]
 
 
+class TestGetArticle:
+    def test_article_api_url(self, client):
+        article = {"title": "Article title", "content": "<p>Body</p>"}
+        with patch.object(
+            client._session, "get",
+            return_value=_make_response(200, json_data=article),
+        ) as mock_get:
+            result = client.get_article("5502876106")
+            assert result["title"] == "Article title"
+            assert "zhuanlan.zhihu.com/api/articles/5502876106" in mock_get.call_args[0][0]
+
+
 # ── get_user_profile ──────────────────────────────────────────────────────────
 
 

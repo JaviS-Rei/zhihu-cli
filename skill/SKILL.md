@@ -1,6 +1,6 @@
 ---
 name: zhihu-cli
-description: "知乎 CLI (pyzhihu-cli)：搜索、热榜、问题/回答/评论、推荐 Feed、用户资料、发想法/提问/文章、删自己的内容、点赞关注、收藏与通知。Agent 代执行 zhihu 命令，Cookie 仅存本地。"
+description: "知乎 CLI (pyzhihu-cli)：搜索、直接读取知乎链接、热榜、问题/回答/评论、专栏文章、推荐 Feed、用户资料、发想法/提问/文章、删自己的内容、点赞关注、收藏与通知。Agent 代执行 zhihu 命令，Cookie 仅存本地。"
 author: BAIGUANGMEI
 version: "0.2.6"
 tags:
@@ -24,7 +24,7 @@ tags:
 
 ## Instruction Scope
 
-本技能仅限：在用户本机调用已安装的 `zhihu` 命令，执行搜索、热榜、问题/回答/评论、推荐 Feed、用户资料、发想法/提问/文章、删除自己的内容、点赞关注、收藏与通知等操作；在用户请求扫码登录且已配置 OpenClaw 时，可将二维码图片经 OpenClaw 发送至用户指定渠道。不包含：代用户将 Cookie 上传至任何第三方、访问非知乎域名、或超出上述命令范围的操作。
+本技能仅限：在用户本机调用已安装的 `zhihu` 命令，执行搜索、直接读取知乎链接、热榜、问题/回答/评论、专栏文章、推荐 Feed、用户资料、发想法/提问/文章、删除自己的内容、点赞关注、收藏与通知等操作；在用户请求扫码登录且已配置 OpenClaw 时，可将二维码图片经 OpenClaw 发送至用户指定渠道。不包含：代用户将 Cookie 上传至任何第三方、访问非知乎域名、或超出上述命令范围的操作。
 
 ---
 
@@ -49,7 +49,7 @@ tags:
 ## Agent 规则
 
 1. **诉求 → 命令**：按下表映射。
-2. **数据查询优先用 --json**：凡执行**数据查询类**指令（如 `search`、`hot`、`question`、`answers`、`answer`、`user`、`user-answers`、`user-articles`、`followers`、`following`、`feed`、`topic`、`collections`、`notifications`、`whoami` 等），**必须**带 `--json`，以获取 API 返回的完整数据，便于解析、汇总或向用户展示；不得仅依赖终端表格等非结构化输出。例外：`feeds` 当前不支持 `--json`；需要展示回答评论时使用 `answer --comments`（`--json` 只输出回答详情，不输出评论）。
+2. **数据查询优先用 --json**：凡执行**数据查询类**指令（如 `search`、`read`、`hot`、`question`、`answers`、`answer`、`user`、`user-answers`、`user-articles`、`followers`、`following`、`feed`、`topic`、`collections`、`notifications`、`whoami` 等），**必须**带 `--json`，以获取 API 返回的完整数据，便于解析、汇总或向用户展示；不得仅依赖终端表格等非结构化输出。例外：`feeds` 当前不支持 `--json`；需要展示回答评论时使用 `answer --comments`（`--json` 只输出回答详情，不输出评论）。
 3. **需登录时**：先 `zhihu status`；未登录则 `zhihu login --qrcode` 或引导用户 `zhihu login --cookie "..."`。
 4. **扫码登录**：执行 `zhihu login --qrcode` 后，若本轮未发过二维码且用户已配置 OpenClaw → 先将二维码复制到 OpenClaw 工作目录的 `media` 文件夹，再 `openclaw message send --channel <渠道> --target <目标> --media <media 路径>/login_qrcode.png --message "请用知乎 App 扫码并确认登录"`；**保持登录进程不中断**直到成功/失败/超时；用户说「重新登录/换号」则中断当前进程再重新执行登录。**复制步骤**：Linux/macOS：`mkdir -p ~/.openclaw/workspace/media && cp ~/.zhihu-cli/login_qrcode.png ~/.openclaw/workspace/media/`；Windows：`mkdir "%USERPROFILE%\.openclaw\workspace\media" 2>nul & copy "%USERPROFILE%\.zhihu-cli\login_qrcode.png" "%USERPROFILE%\.openclaw\workspace\media\login_qrcode.png"`（若 OpenClaw 工作目录不同则替换为实际路径）。
 5. **安全**：Cookie 仅本地；优先扫码，避免在不可信处粘贴 Cookie；可提醒 `zhihu logout` 清空。
@@ -65,6 +65,7 @@ tags:
 | Cookie 登录 | `zhihu login --cookie "z_c0=...; _xsrf=...; d_c0=..."` |
 | 重新登录 / 换号 | 中断当前进程 → `zhihu login --qrcode` |
 | 检查登录 | `zhihu status`；看资料 `zhihu whoami [--json]` |
+| 读取知乎链接 | `zhihu read "<知乎链接>" [--json]`（支持问题、回答、用户、话题、专栏文章，如 `https://zhuanlan.zhihu.com/p/5502876106`） |
 | 搜索 | `zhihu search "关键词" [--type general/people/topic] [--limit N] [--answers N] [--json]` |
 | 热榜 | `zhihu hot [--limit N] [--answers N] [--json]` |
 | 问题 | `zhihu question <id> [--json]`；回答列表 `zhihu answers <id> [--limit N] [--sort default/created] [--json]` |
@@ -111,6 +112,7 @@ tags:
 ```bash
 zhihu login --qrcode
 zhihu status
+zhihu read "https://zhuanlan.zhihu.com/p/5502876106" --json
 zhihu search "Python" --json
 zhihu hot --limit 10 --json
 zhihu question 12345678 --json
@@ -127,6 +129,8 @@ zhihu logout
 ```
 
 正文支持 HTML 富文本（`ask` 的 `-d`、`pin` 的 `-c`、`article` 的正文）。
+
+`zhihu read` 的普通输出会把已支持的知乎 HTML 转为 Markdown 风格文本；遇到未支持的 HTML 标签时会原样保留该标签并输出警告。需要完整原始结构时使用 `zhihu read "<链接>" --json`，不要自行丢弃 `content` 中的 HTML。
 
 ---
 

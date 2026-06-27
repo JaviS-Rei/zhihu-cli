@@ -50,7 +50,7 @@ class TestCliGroup:
         result = runner.invoke(cli, ["--help"])
         expected = [
             "login", "logout", "status", "whoami",
-            "search", "hot", "question", "answer", "answers",
+            "search", "read", "hot", "question", "answer", "answers",
             "feed", "topic",
             "user", "user-answers", "user-articles",
             "followers", "following",
@@ -212,6 +212,62 @@ class TestAnswerCommand:
             result = runner.invoke(cli, ["answer", "67890"])
             assert result.exit_code == 0
             assert "Author1" in result.output
+
+
+class TestReadCommand:
+    def test_read_zhuanlan_article_url(self, runner, saved_cookies):
+        article_data = {
+            "title": "Article Title",
+            "content": "<p>Article body</p>",
+            "author": {"name": "Author1"},
+            "voteup_count": 12,
+            "comment_count": 3,
+        }
+        mc = _make_mock_client(get_article=article_data)
+        with patch(_CLIENT_PATCH, return_value=mc):
+            result = runner.invoke(
+                cli,
+                ["read", "https://zhuanlan.zhihu.com/p/5502876106"],
+            )
+            assert result.exit_code == 0
+            assert "Article Title" in result.output
+            assert "Article body" in result.output
+            mc.get_article.assert_called_once_with("5502876106")
+
+    def test_read_article_preserves_unknown_html_with_warning(self, runner, saved_cookies):
+        article_data = {
+            "title": "Article Title",
+            "content": '<p>Known</p><zhihu-card data-id="1">Card</zhihu-card>',
+            "author": {"name": "Author1"},
+        }
+        mc = _make_mock_client(get_article=article_data)
+        with patch(_CLIENT_PATCH, return_value=mc):
+            result = runner.invoke(
+                cli,
+                ["read", "https://zhuanlan.zhihu.com/p/5502876106"],
+            )
+            assert result.exit_code == 0
+            assert '<zhihu-card data-id="1">Card</zhihu-card>' in result.output
+            assert "Preserved unsupported HTML tags" in result.output
+            assert "zhihu-card" in result.output
+
+    def test_read_answer_url_json(self, runner, saved_cookies):
+        ans_data = {
+            "content": "<p>This is the answer</p>",
+            "author": {"name": "Author1"},
+            "voteup_count": 42,
+            "comment_count": 3,
+        }
+        mc = _make_mock_client(get_answer=ans_data)
+        with patch(_CLIENT_PATCH, return_value=mc):
+            result = runner.invoke(
+                cli,
+                ["read", "https://www.zhihu.com/question/12345/answer/67890", "--json"],
+            )
+            assert result.exit_code == 0
+            data = json.loads(result.output)
+            assert data["voteup_count"] == 42
+            mc.get_answer.assert_called_once_with("67890")
 
 
 # ── User commands ──────────────────────────────────────────────────────────────
